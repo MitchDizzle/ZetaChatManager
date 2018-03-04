@@ -1,0 +1,64 @@
+
+Chat Manager
+1. Prefix (Goes to a list of available tags)
+3. Suffix
+4. Colors -> (Color Settings Menu)
+
+
+Example Custom Prefix: "{c1}[{c2}Admin{c1}]"
+Example Custom Prefix: "{c1}VIP{c2}."
+
+Color Settings:
+1. Prefix Colors -> (Color Chooser (Team))
+2. Name Colors
+3. Suffix Colors
+4. Chat Colors
+
+Color Chooser (Team):
+1. Team Red (Terrorist) -> Color Chooser (Status)
+2. Team Blu (Counter-Terrorist)
+3. Spectator
+
+Color Chooser (Status): (This can be disabled if the user has no access to a alive/dead color)
+1. Alive -> Color Chooser (List)
+2. Dead
+
+Color Chooser (List):
+1. Color 1
+2. Color 2
+
+Color Chooser (Color #):
+1. Red
+2. Orange
+3. etc
+
+
+Database config:
+
+chat_defaults: (Tags can be reset with !chatreset <player/steamid> (if a non-admin player uses this then it will just reset their chat))
+int  - priority (Will sort the inputs from lower to higher and find a matching flag/steamid)
+char - flag/steamid
+char - prefix (ex: "1;5-6;7-8;9-10" Prefix Format: 1, Team Red: color #5 (alive), color #6 (dead), Team Blu: color #7 (alive), color #8 (dead), Team Spec: color #9 (alive), color #10 (dead)
+char - suffix (ex: "1;(5/6)-;(5/6)-;(5/6)-") Prefix Format: 1, Team Red: color #5 and 6, dead color will be same as alive color, etc.
+char - name
+char - text
+
+chat_config:
+int - id
+int/char - type - Used to determine what type of value this is.
+char - auth (flag/steamid) - Used to add to a client specific menu
+char - value - value of the type 
+char - display - the display of this value
+
+chat_config example:
+type: "tag:prefix"
+auth: "b&STEAM_0:0:12345"
+value: "{c1}[{c2}Admin{c1}]"
+display:"Custom Admin Tag 1"
+
+type: "color:prefix,suffix,name"
+auth: "b"
+value:"\x07FFAAAA"
+display:"Off White"
+
+
