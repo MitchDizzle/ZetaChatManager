@@ -2,53 +2,67 @@
 Chat Manager
 1. Prefix (Goes to a list of available tags)
 3. Suffix
-4. Colors -> (Color Settings Menu)
+4. Name -> (Name Color Chooser)
+4. Text -> (Text Color Chooser)
 
 
 Example Custom Prefix: "{c1}[{c2}Admin{c1}]"
 Example Custom Prefix: "{c1}VIP{c2}."
 
-Color Settings:
-1. Prefix Colors -> (Color Chooser (Team))
-2. Name Colors
-3. Suffix Colors
-4. Chat Colors
-
-Color Chooser (Team):
-1. Team Red (Terrorist) -> Color Chooser (Status)
+Name Color Chooser (Team):
+1. Team Red (Terrorist) -> Choose Red Prefix (Status)
 2. Team Blu (Counter-Terrorist)
 3. Spectator
 
-Color Chooser (Status): (This can be disabled if the user has no access to a alive/dead color)
-1. Alive -> Color Chooser (List)
-2. Dead
-
-Color Chooser (List):
-1. Color 1
-2. Color 2
-
-Color Chooser (Color #):
-1. Red
-2. Orange
-3. etc
+Choose Red Prefix (List):
+1. Admin Tag Red
+1. Admin Tag Orange
 
 
 Database config:
 
-chat_defaults: (Tags can be reset with !chatreset <player/steamid> (if a non-admin player uses this then it will just reset their chat))
-int  - priority (Will sort the inputs from lower to higher and find a matching flag/steamid)
-char - flag/steamid
-char - prefix (ex: "1;5-6;7-8;9-10" Prefix Format: 1, Team Red: color #5 (alive), color #6 (dead), Team Blu: color #7 (alive), color #8 (dead), Team Spec: color #9 (alive), color #10 (dead)
-char - suffix (ex: "1;(5/6)-;(5/6)-;(5/6)-") Prefix Format: 1, Team Red: color #5 and 6, dead color will be same as alive color, etc.
-char - name
-char - text
-
 chat_config:
-int - id
-int/char - type - Used to determine what type of value this is.
-char - auth (flag/steamid) - Used to add to a client specific menu
-char - value - value of the type 
+int  - id
+int  - type - Used to determine what type of value this is.
+int  - gr - group - What config this group is under
+int  - priority
+char - sg
 char - display - the display of this value
+char - t0
+char - t0d
+char - t1
+char - t1d
+char - t2
+char - t2d
+
+chat_groups:
+int  - id -
+int  - priority - 
+char - steamid/flag
+char - gr - group
+char - sg - servergroup - server group this chat group is present on
+
+chat_servergroups: Say you have like 3 idle servers, you can group them together here
+int  - id
+char - display
+
+chat_servers: Add a server if it does not exist in the database. (Auto Config)
+char - uniqueid
+char - Name
+char - ip/port
+char - sgs - servergroup (def: 0)
+
+chat_players:
+int  - id
+char - auth
+char - groups - The groups the player belongs to.
+char - name
+
+chat_flags:
+int  - id
+char - flag
+char - groups
+char - name
 
 chat_config example:
 type: "tag:prefix"
@@ -61,4 +75,9 @@ auth: "b"
 value:"\x07FFAAAA"
 display:"Off White"
 
+Types:
+1 - Prefix
+2 - Name
+3 - Suffix
+4 - Text
 
