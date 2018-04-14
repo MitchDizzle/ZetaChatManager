@@ -9,6 +9,13 @@
 #define ALIVE 0
 #define DEAD 1
 
+#define PREFIX 0
+#define NAME   1
+#define SUFFIX 2
+#define TEXT   3
+
+#define DATABASENAME "zetachat"
+
 #define CHAT_PREFIX  (1 << 0)
 #define CHAT_NAME    (1 << 2)
 #define CHAT_SUFFIX  (1 << 1)
@@ -16,27 +23,28 @@
 #define MAXTYPES  4
 #define MAXTEAMS  3
 #define MAXSTATES 2
-#define MAXLENGTH 64
-char defaultChat[MAXTYPES][MAXTEAMS][MAXSTATES][MAXLENGTH];
+#define MAXLENGTH_SQL 64
+int defaultChat[MAXTYPES];
 
-/*
-char chatID[MAXCHATCOLORS][32];
-char chatDisplay[MAXCHATCOLORS][32];
-char chatAccess[MAXCHATCOLORS][MAXLENGTH];
-int chatAccessType[MAXCHATCOLORS]; //0 Flag, 1 - Steam
-char chatName[MAXCHATCOLORS][MAXSTATES][MAXLENGTH];
-char chatText[MAXCHATCOLORS][MAXSTATES][MAXLENGTH];
-char chatPrefix[MAXCHATCOLORS][MAXSTATES][MAXLENGTH];
-char chatSuffix[MAXCHATCOLORS][MAXSTATES][MAXLENGTH];
-int maxChatConfig;
-StringMap idLookup;
-*/
+char serverAddress[64];
+int serverGroup;
 
-int plySel[MAXPLAYERS+1][MAXTYPES];
-Handle cChat[4];
+#define MAXCONFIG 100
+//Stores the chat_config ids for each type (prefix, name, suffix, text).
+int chatID[MAXCONFIG]; 
+int chatType[MAXCONFIG];
+int chatGroup[MAXCONFIG];
+char chatValue[MAXCONFIG][MAXTYPES][MAXTEAMS][MAXSTATES][MAXLENGTH_SQL];
+int chatPosition[MAXTYPES];
 
-Database db;
+//Store flags needed for each group
+int flagBit[MAXFLAGS]
+int flagGroup[MAXFLAGS];
+int flagCount;
 
+bool dbLoaded;
+bool dbLock;
+Database dbChat;
 
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
@@ -47,353 +55,137 @@ public Plugin myinfo = {
 };
 
 public OnPluginStart() {
-    cChat[0] = RegClientCookie("zcm_prefix", "Enable Prefix", CookieAccess_Private);
-    cChat[1] = RegClientCookie("zcm_name", "Enable Name Color", CookieAccess_Private);
-    cChat[2] = RegClientCookie("zcm_suffix", "Enable Suffix", CookieAccess_Private);
-    cChat[3] = RegClientCookie("zcm_text", "Enable Text Color", CookieAccess_Private);
-    
-    RegAdminCmd("sm_chatcolor", Command_Chat, 0);
-    RegAdminCmd("sm_cc", Command_Chat, 0);
-    RegAdminCmd("sm_default", Command_Default, 0);
-    
-    loadConfig();
 
-    for(int i = 1; i <= MaxClients; i++) {
-        plySel[i][0] = -2;
-        plySel[i][1] = -2;
-        plySel[i][2] = -2;
-        plySel[i][3] = -2;
-        if(IsClientInGame(i)) {
-            if(AreClientCookiesCached(i)) {
-                OnClientCookiesCached(i);
-            }
-        }
-    }
 }
 
-public void OnClientDisconnect(int client) {
-    plySel[client][0] = -2;
-    plySel[client][1] = -2;
-    plySel[client][2] = -2;
-    plySel[client][3] = -2;
+public void OnMapStart() {
+    connectDatabase();
 }
 
-public void OnClientCookiesCached(int client) {
-    char sValue[64];
-    
-    for(int c = 0; c < 4; c++) {
-        GetClientCookie(client, cChat[c], sValue, sizeof(sValue));
-        plySel[client][c] = StrEqual(sValue, "") ? -2 : getChatFromID(sValue);
-    }
-    pickChatColor(client);
-}
-
-public void HandlePlayerColors(int author, char[] name, char[] message, bool overrideMessageColor) {
-    bool alive = IsPlayerAlive(author);
-    int team = GetClientTeam(author);
-    if(team < 2) {
-        alive = false;
-    } 
-    int flagBits = GetUserFlagBits(author);
-    bool plyIsAdmin = (flagBits & ADMFLAG_ROOT || flagBits & ADMFLAG_GENERIC);
-    if(!alive && plyIsAdmin && StrContains(message, ".") == 0) {
-        ReplaceStringEx(message, MAXLENGTH_MESSAGE, ".", "", 1, 0, false);
-        alive = true;
-    }
-    int alv = alive ? 0 : 1;
-    char chValue[4][64];
-    
-    int ch = 0;
-    for(int c = 0; c < 4; c++) {
-        ch = plySel[author][c];
-        if(ch < 0) {
-            //Use Defaults
-            Format(chValue[c], 64, "%s", defaultChat[c][alv]);
+public void connectDatabase() {
+    dbLoaded = false;
+    if(!dbLock) {
+        if(SQL_CheckConfig(DATABASENAME)) {
+            Database.Connect(dbConnect, DATABASENAME);
         } else {
-            if(c == 0) {
-                Format(chValue[c], 64, "%s", chatName[ch][alv]);
-            } else if(c == 1) {
-                Format(chValue[c], 64, "%s", chatText[ch][alv]);
-            } else if(c == 2) {
-                Format(chValue[c], 64, "%s", chatPrefix[ch][alv]);
-            } else if(c == 3) {
-                Format(chValue[c], 64, "%s", chatSuffix[ch][alv]);
-            }
+            SetFailState("Database config for '%s' not found. See README for setup guide.", DATABASENAME);
         }
     }
-    Format(name, MAXLENGTH_NAME, "%s%s%s%s\x01", chValue[2], chValue[0], name, chValue[3]);
-    if(!overrideMessageColor) {
-        Format(message, MAXLENGTH_BUFFER, "%s%s", chValue[1], message);
-    }
 }
 
-
-public Action CCP_OnChatMessage(int& author, ArrayList recipients, char[] flagstring, char[] name, char[] message) {
-    if(author < 0 || author > MaxClients) {
-        return Plugin_Continue;
+public void dbConnect(Database db, const char[] error, any data) {
+    if(db == null) {
+        LogMessage("Database failure: %s", error);
+        return;
     }
-    HandlePlayerColors(author, name, message, false);
-    return Plugin_Changed;
+    dbLock = true;
+    dbChat = db;
+    int hostip = GetConVarInt(FindConVar("hostip"));
+    int hostport = GetConVarInt(FindConVar("hostport"));
+    Format(serverAddress, sizeof(serverAddress), "%i.%i.%i.%i:%i", hostip >>> 24 & 255, hostip >>> 16 & 255, hostip >>> 8 & 255, hostip & 255, hostport);
+    //Retrieve Server ID, if not make new serverId.
+    char query[150];
+    dbChat.Format(query, sizeof(query), "SELECT sg FROM chat_servers WHERE address='%s';", serverAddress);
+    dbChat.Query(OnReceiveServerGroup, query, _, DBPrio_High);
 }
 
-public void pickChatColor(int client) {
-    if(plySel[client][0] != -2 ||
-        plySel[client][1] != -2 ||
-        plySel[client][2] != -2 ||
-        plySel[client][3] != -2) {
-        return;
-    } //Player should lookup new chat config.
-    char authId[48];
-    if(!GetClientAuthId(client, AuthId_Steam2, authId, sizeof(authId), true)) {
-        return;
-    }
-    int flagBits = 0;
-    int userBits = GetUserFlagBits(client);
-    for(int s = 0; s < 4; s++) {
-        plySel[client][s] = -1;
-        for(int c = 0; c < maxChatConfig; c++) {
-            if(s == 0 && StrEqual(chatName[c][0], defaultChat[s][0]) && StrEqual(chatName[c][1], defaultChat[s][1])) {
-                continue;
-            } if(s == 1 && StrEqual(chatText[c][0], defaultChat[s][0]) && StrEqual(chatText[c][1], defaultChat[s][1])) {
-                continue;
-            } if(s == 2 && StrEqual(chatPrefix[c][0], defaultChat[s][0]) && StrEqual(chatPrefix[c][1], defaultChat[s][1])) {
-                continue;
-            } if(s == 3 && StrEqual(chatSuffix[c][0], defaultChat[s][0]) && StrEqual(chatSuffix[c][1], defaultChat[s][1])) {
-                continue;
+public OnReceiveServerGroup(Database db, DBResultSet result, const char[] error, any data) {
+    bool hasServerInDB = false;
+    if(result != null) {
+        serverGroup = -1;
+        if(result.RowCount > 0) {
+            hasServerInDB = true;
+            while(result.FetchRow()) {
+                serverGroup = result.FetchInt(0);
             }
-            //Check the auth type of this chat config
-            if(chatAccessType[c] == 0) {
-                //By Flag
-                flagBits = ReadFlagString(chatAccess[c]);
-                if(userBits & flagBits) {
-                    plySel[client][s] = c;
-                    SetClientCookie(client, cChat[s], chatID[c]);
-                    break;
+        }
+        delete result;
+    } else {
+        LogError("SQL error receiving tag cache: %s", error);
+    }
+    PrintToServer("serverGroup: %i", serverGroup);
+    
+    char sqlCopyPasta[64];
+    if(serverGroup == -1) {
+        LogMessage("Server does not belong to a group, this isn't an issue however it's recommended to set one.");
+        Format(sqlCopyPasta, sizeof(sqlCopyPasta), "SELECT id FROM chat_groups WHERE sg = '-1'");
+    } else {
+        Format(sqlCopyPasta, sizeof(sqlCopyPasta), "SELECT id FROM chat_groups WHERE sg LIKE '%%%03d%%' OR sg = '-1'", serverGroup);
+    }
+    char sqlBuffer[256];
+    Transaction transaction = new Transaction();
+    // only if the server doesn't belong to a server group should we try and add the address.
+    //Retrieve All configs Prefix, Name, Suffix and Text.
+    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", PREFIX, sqlCopyPasta);
+    transaction.AddQuery(sqlBuffer, PREFIX);
+    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", NAME, sqlCopyPasta);
+    transaction.AddQuery(sqlBuffer, NAME);
+    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", SUFFIX, sqlCopyPasta);
+    transaction.AddQuery(sqlBuffer, SUFFIX);
+    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", TEXT, sqlCopyPasta);
+    transaction.AddQuery(sqlBuffer, TEXT);
+    //Retrieve flags?
+    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT flag, gr FROM chat_flags WHERE gr IN (%s);", sqlCopyPasta);
+    transaction.AddQuery(sqlBuffer, -1);
+    if(!hasServerInDB) {
+        Format(sqlBuffer, sizeof(sqlBuffer), "INSERT INTO chat_servers (address, sg, disp) VALUES ('%s', -1, '%s');", serverAddress, serverAddress);
+        transaction.AddQuery(sqlBuffer, -1337);
+    }
+    dbChat.Execute(transaction, loadConfigTransactionCallback, threadFailure);
+}
+
+public void loadConfigTransactionCallback(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
+    
+    char tempBuffer[64];
+    int tempInt;
+    
+    int cc = 0; // Holds the Config count 
+    for(int x = 0; x < numQueries; x++) {
+        if(queryData[x] >= 0) {
+            if(results[x].RowCount) {
+                while(results[x].FetchRow()) {
+                    chatID[cc] = results[x].FetchInt(0);
+                    chatType[cc] = results[x].FetchInt(1);
+                    chatGroup[cc] = results[x].FetchInt(2);
+                    results[x].FetchString(4,  chatDisplay[cc], MAXLENGTH_SQL);
+                    results[x].FetchString(5,  chatValue[cc][queryData[x]][0][0], MAXLENGTH_SQL);
+                    results[x].FetchString(6,  chatValue[cc][queryData[x]][0][1], MAXLENGTH_SQL);
+                    results[x].FetchString(7,  chatValue[cc][queryData[x]][1][0], MAXLENGTH_SQL);
+                    results[x].FetchString(8,  chatValue[cc][queryData[x]][1][1], MAXLENGTH_SQL);
+                    results[x].FetchString(9,  chatValue[cc][queryData[x]][2][0], MAXLENGTH_SQL);
+                    results[x].FetchString(10, chatValue[cc][queryData[x]][2][1], MAXLENGTH_SQL);
+                    cc++;
                 }
-            } else if(StrEqual(authId, chatAccess[c], false)) {
-                //By Steam
-                plySel[client][s] = c;
-                SetClientCookie(client, cChat[s], chatID[c]);
-                break;
+                chatPosition[x] = cc; //Where to end a loop later on.
+            } else {
+                chatPosition[x] = -1; //No configs for this exists.
             }
-        }
-    }
-}
-
-public int getChatFromID(char[] chatId) {
-    int value = -1;
-    idLookup.GetValue(chatId, value);
-    return value;
-}
-
-public Action Command_Chat(int client, int args) {
-    displayMainMenu(client);
-    return Plugin_Handled;
-}
-
-public Action Command_Default(int client, int args) {
-    //plyChat[client] = -2;
-    //SetClientCookie(client, cID, "");
-    return Plugin_Handled;
-}
-
-public void displayMainMenu(int client) {
-    if(!client) {
-        return;
-    }
-    char cat[4][32] = {
-        "Name",
-        "Text",
-        "Prefix",
-        "Suffix"
-    };
-    char info[12];
-    char display[255];
-    Menu menu = new Menu(Menu_Main, MENU_ACTIONS_DEFAULT);
-    menu.SetTitle("Chat Menu:");
-    for(int c = 0; c < 4; c++) {
-        
-        Format(display, sizeof(display), "%s: ", cat[c]);
-        if(plySel[client][c] < 0) {
-            Format(display, sizeof(display), "%sDefault", display);
-        } else {
-            Format(display, sizeof(display), "%s%s", display, chatDisplay[plySel[client][c]]);
-        }
-        IntToString(c, info, sizeof(info));
-        menu.AddItem(info, display);
-    }
-    menu.Pagination = MENU_NO_PAGINATION;
-    menu.ExitButton = true;
-    menu.Display(client, MENU_TIME_FOREVER);
-}
-
-public Menu_Main(Menu menu, MenuAction action, int client, int param2) {
-    switch (action)    {
-        case MenuAction_End:
-            delete menu;
-        case MenuAction_Select: {
-            char info[12];
-            GetMenuItem(menu, param2, info, sizeof(info));
-            displayChatMenu(client, StringToInt(info), 0);
-        }
-    }
-    return;
-}
-
-int menuSel[MAXPLAYERS+1];
-public void displayChatMenu(int client, int chat, int page) {
-    if(!client) {
-        return;
-    }
-    menuSel[client] = chat;
-    char authId[48];
-    char authIdLower[48];
-    if(!GetClientAuthId(client, AuthId_Steam2, authId, sizeof(authId), true)) {
-        return;
-    }
-    StrToLowerRemoveBlanks(authIdLower, authId, sizeof(authId));
-    int ch = plySel[client][chat];
-    
-    Menu menu = new Menu(Menu_Chat, MENU_ACTIONS_DEFAULT);
-    menu.SetTitle("Select Setup:");
-    menu.AddItem("default", "Default", ch == -1 ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
-    int flagBits = 0;
-    int userBits = GetUserFlagBits(client);
-    for(int c = 0; c < maxChatConfig; c++) {
-        //Check the auth type of this chat config
-        
-        if(c != ch) {
-            if(chat == 0 && StrEqual(chatName[c][0], defaultChat[chat][0]) && StrEqual(chatName[c][1], defaultChat[chat][1])) {
-                continue;
-            } if(chat == 1 && StrEqual(chatText[c][0], defaultChat[chat][0]) && StrEqual(chatText[c][1], defaultChat[chat][1])) {
-                continue;
-            } if(chat == 2 && StrEqual(chatPrefix[c][0], defaultChat[chat][0]) && StrEqual(chatPrefix[c][1], defaultChat[chat][1])) {
-                continue;
-            } if(chat == 3 && StrEqual(chatSuffix[c][0], defaultChat[chat][0]) && StrEqual(chatSuffix[c][1], defaultChat[chat][1])) {
-                continue;
-            }
-        }
-        
-        if(chatAccessType[c] == 0) {
-            //By Flag
-            flagBits = ReadFlagString(chatAccess[c]);
-            if(!(userBits & flagBits)) {
-                //Player does not contain flags
-                continue;
-            }
-        } else if(!StrEqual(authIdLower, chatAccess[c], false)) {
-            //Steamids do not match
-            continue;
-        }
-        menu.AddItem(chatID[c], chatDisplay[c], ch == c ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
-    }
-    menu.ExitButton = true;
-    menu.DisplayAt(client, page, MENU_TIME_FOREVER);
-}
-
-public Menu_Chat(Menu menu, MenuAction action, int client, int param2) {
-    switch (action)    {
-        case MenuAction_End:
-            delete menu;
-        case MenuAction_Cancel:
-            displayMainMenu(client);
-        case MenuAction_Select: {
-            char info[32];
-            GetMenuItem(menu, param2, info, sizeof(info));
-            int ch = menuSel[client];
-            plySel[client][ch] = getChatFromID(info);
-            SetClientCookie(client, cChat[ch], info);
-            displayChatMenu(client, ch, menu.Selection);
-            
-            char chValue[4][64];
-            for(int a = 0; a < 2; a++) {
-                for(int c = 0; c < 4; c++) {
-                    ch = plySel[client][c];
-                    if(ch < 0) {
-                        //Use Defaults
-                        Format(chValue[c], 64, "%s", defaultChat[c][a]);
-                    } else {
-                        if(c == 0) {
-                            Format(chValue[c], 64, "%s", chatName[ch][a]);
-                        } else if(c == 1) {
-                            Format(chValue[c], 64, "%s", chatText[ch][a]);
-                        } else if(c == 2) {
-                            Format(chValue[c], 64, "%s", chatPrefix[ch][a]);
-                        } else if(c == 3) {
-                            Format(chValue[c], 64, "%s", chatSuffix[ch][a]);
+        } else if(queryData[x] == -1) {
+            //Flags
+            flagCount = 0;
+            if(results[x].RowCount) {
+                while(results[x].FetchRow()) {
+                    results[x].FetchString(0, tempBuffer, MAXLENGTH_SQL);
+                    
+                    //Check if the flag is empty
+                    if(!StrEqual(tempBuffer, "", false)) {
+                        if(StrContains(tempBuffer, ",", false) >= 0) {
+                            //Multiple flags
+                        } else {
+                            
                         }
                     }
+                    
+                    flagGroup[flagCount] = results[x].FetchInt(1);
+                    flagCount++;
                 }
-                PrintToChat(client, "\x01%s%s%N%s\x01: %sPreview of %s text.", chValue[2], chValue[0], client, chValue[3], chValue[1], a == 0 ? "alive" : "dead");
             }
         }
     }
-    return;
+    dbLoaded = true;
+    dbLock = false;
 }
 
-stock void kvGetStringColor(KeyValues kv, const char[] key, char[] value, int maxlength, const char[] defvalue="") {
-    kv.GetString(key, value, maxlength, defvalue);
-    ReplaceString(value, maxlength, "{07}", "\x07");
-}
-
-stock int StrToLowerRemoveBlanks(const char[] str, char[] buffer, int bufsize) {
-    int n = 0;
-    int x = 0;
-    while (str[n] != '\0' && x < (bufsize-1)) { // Make sure we are inside bounds
-        int charac = str[n++];
-        if (charac == ' ') {
-            continue;
-        }else if (IsCharUpper(charac)) {
-            charac = CharToLower(charac);
-        }
-        buffer[x++] = charac;
-    }
-    buffer[x++] = '\0';
-    return x;
-}
-
-public int Native_FakeSay(Handle plugin, int args) {
-    int client = GetNativeCell(1);
-    if(!NativeCheck_IsClientValid(client)) {
-        return false;
-    }
-    char message[MAXLENGTH_MESSAGE];
-    GetNativeString(2, message, MAXLENGTH_MESSAGE);
-    fakeSayEx(client, message, "");
-    return true;
-}
-
-public int Native_FakeSayEx(Handle plugin, int args) {
-    int client = GetNativeCell(1);
-    if(!NativeCheck_IsClientValid(client)) {
-        return false;
-    }
-    char message[MAXLENGTH_MESSAGE];
-    char textColor[32];
-    GetNativeString(2, message, MAXLENGTH_MESSAGE);
-    GetNativeString(3, textColor, 32);
-    fakeSayEx(client, message, textColor);
-    return true;
-}
-
-public void fakeSayEx(int client, char[] message, char[] textColor) {
-    char name[MAXLENGTH_MESSAGE];
-    GetClientName(client, name, sizeof(name));
-    //CCP_HandleRecipients(client, recipients, "")
-    HandlePlayerColors(client, name, message, true);
-    char messageBuffer[256];
-    Format(messageBuffer, sizeof(messageBuffer), "%s\x01: %s%s", name, textColor, message);
-    PrintToChatAll(messageBuffer);
-}
-
-stock bool NativeCheck_IsClientValid(int client) {
-    if(client <= 0 || client > MaxClients) {
-        ThrowNativeError(SP_ERROR_NATIVE, "Client index %i is invalid", client);
-        return false;
-    }
-    if(!IsClientInGame(client)) {
-        ThrowNativeError(SP_ERROR_NATIVE, "Client %i is not in game", client);
-        return false;
-    }
-    return true;
+public void threadFailure(Database db, any data, int numQueries, const char[] error, int failIndex, any[] queryData) {
+    LogError("Error in Database Execution: %s (%i - #%i)", error, numQueries, failIndex);
 }
