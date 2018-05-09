@@ -17,8 +17,8 @@
 #define DATABASENAME "zetachat"
 
 #define CHAT_PREFIX  (1 << 0)
-#define CHAT_NAME    (1 << 2)
-#define CHAT_SUFFIX  (1 << 1)
+#define CHAT_NAME    (1 << 1)
+#define CHAT_SUFFIX  (1 << 2)
 #define CHAT_TEXT    (1 << 3)
 #define MAXTYPES  4
 #define MAXTEAMS  3
@@ -29,18 +29,21 @@ int defaultChat[MAXTYPES];
 char serverAddress[64];
 int serverGroup;
 
-#define MAXCONFIG 100
+#define MAXGROUPS 25
+int plyGroups[MAXPLAYERS+1][MAXGROUPS]; // The groups a player exists under
+int plyGroupCount[MAXPLAYERS+1]; // The groups a player exists under
 //Stores the chat_config ids for each type (prefix, name, suffix, text).
-int chatID[MAXCONFIG]; 
-int chatType[MAXCONFIG];
-int chatGroup[MAXCONFIG];
-char chatValue[MAXCONFIG][MAXTYPES][MAXTEAMS][MAXSTATES][MAXLENGTH_SQL];
 int chatPosition[MAXTYPES];
+ArrayList chatID;
+ArrayList chatGroup;
+ArrayList chatValid;
+ArrayList chatDisplay;
+ArrayList chatValue[MAXTEAMS][MAXSTATES];
+//char chatValue[MAXCONFIG][MAXLENGTH_SQL];
 
 //Store flags needed for each group
-int flagBit[MAXFLAGS]
-int flagGroup[MAXFLAGS];
-int flagCount;
+ArrayList flagBits;
+ArrayList flagGroup;
 
 bool dbLoaded;
 bool dbLock;
@@ -55,7 +58,6 @@ public Plugin myinfo = {
 };
 
 public OnPluginStart() {
-
 }
 
 public void OnMapStart() {
@@ -136,56 +138,108 @@ public OnReceiveServerGroup(Database db, DBResultSet result, const char[] error,
 
 public void loadConfigTransactionCallback(Database db, any data, int numQueries, DBResultSet[] results, any[] queryData) {
     
-    char tempBuffer[64];
+    char tempBuffer[68];
     int tempInt;
     
-    int cc = 0; // Holds the Config count 
+    
+    clearOrCreateArrayList(chatID, 1);
+    clearOrCreateArrayList(chatGroup, 1);
+    
+    //int tempArray[9];
+    clearOrCreateArrayList(chatValid, 9);
+    clearOrCreateArrayList(chatDisplay, ByteCountToCells(MAXLENGTH_SQL));
+    for(int t = 0; t < MAXTEAMS; t++) {
+        for(int s = 0; s < MAXSTATES; s++) {
+            clearOrCreateArrayList(chatValue[t][s], ByteCountToCells(MAXLENGTH_SQL));
+        }
+    }
+    clearOrCreateArrayList(flagBits, 1);
+    clearOrCreateArrayList(flagGroup, 1);
+    
+    ArrayList defaultFlags = new ArrayList();
+    
     for(int x = 0; x < numQueries; x++) {
         if(queryData[x] >= 0) {
             if(results[x].RowCount) {
                 while(results[x].FetchRow()) {
-                    chatID[cc] = results[x].FetchInt(0);
-                    chatType[cc] = results[x].FetchInt(1);
-                    chatGroup[cc] = results[x].FetchInt(2);
-                    results[x].FetchString(4,  chatDisplay[cc], MAXLENGTH_SQL);
-                    results[x].FetchString(5,  chatValue[cc][queryData[x]][0][0], MAXLENGTH_SQL);
-                    results[x].FetchString(6,  chatValue[cc][queryData[x]][0][1], MAXLENGTH_SQL);
-                    results[x].FetchString(7,  chatValue[cc][queryData[x]][1][0], MAXLENGTH_SQL);
-                    results[x].FetchString(8,  chatValue[cc][queryData[x]][1][1], MAXLENGTH_SQL);
-                    results[x].FetchString(9,  chatValue[cc][queryData[x]][2][0], MAXLENGTH_SQL);
-                    results[x].FetchString(10, chatValue[cc][queryData[x]][2][1], MAXLENGTH_SQL);
-                    cc++;
+                    chatID.Push(results[x].FetchInt(0));
+                    chatGroup.Push(results[x].FetchInt(2));
+                    results[x].FetchString(4,  tempBuffer, MAXLENGTH_SQL);
+                    chatDisplay.PushString(    tempBuffer);
+                    results[x].FetchString(5,  tempBuffer, MAXLENGTH_SQL);
+                    chatValue[0][0].PushString(tempBuffer);
+                    results[x].FetchString(6,  tempBuffer, MAXLENGTH_SQL);
+                    chatValue[0][1].PushString(tempBuffer);
+                    results[x].FetchString(7,  tempBuffer, MAXLENGTH_SQL);
+                    chatValue[1][0].PushString(tempBuffer);
+                    results[x].FetchString(8,  tempBuffer, MAXLENGTH_SQL);
+                    chatValue[1][1].PushString(tempBuffer);
+                    results[x].FetchString(9,  tempBuffer, MAXLENGTH_SQL);
+                    chatValue[2][0].PushString(tempBuffer);
+                    results[x].FetchString(10, tempBuffer, MAXLENGTH_SQL);
+                    chatValue[2][1].PushString(tempBuffer);
                 }
-                chatPosition[x] = cc; //Where to end a loop later on.
+                chatPosition[x] = chatID.Length; //Where to end a loop later on.
             } else {
                 chatPosition[x] = -1; //No configs for this exists.
             }
         } else if(queryData[x] == -1) {
             //Flags
-            flagCount = 0;
             if(results[x].RowCount) {
                 while(results[x].FetchRow()) {
                     results[x].FetchString(0, tempBuffer, MAXLENGTH_SQL);
-                    
                     //Check if the flag is empty
                     if(!StrEqual(tempBuffer, "", false)) {
-                        if(StrContains(tempBuffer, ",", false) >= 0) {
-                            //Multiple flags
-                        } else {
-                            
-                        }
+                        /*if(StrContains(tempBuffer, ",", false) >= 0) {
+                        }*/
+                        flagBits.Push(ReadFlagString(tempBuffer));
+                        flagGroup.Push(results[x].FetchInt(1));
+                    } else {
+                        flagBits.Push(0);
+                        defaultFlags.Push(flagGroup.Push(results[x].FetchInt(1)));
                     }
-                    
-                    flagGroup[flagCount] = results[x].FetchInt(1);
-                    flagCount++;
                 }
             }
         }
     }
+    
+    findDefaultChat(defaultFlags);
+    
     dbLoaded = true;
     dbLock = false;
 }
 
 public void threadFailure(Database db, any data, int numQueries, const char[] error, int failIndex, any[] queryData) {
     LogError("Error in Database Execution: %s (%i - #%i)", error, numQueries, failIndex);
+}
+
+public void findDefaultChat(ArrayList &defaultFlags) {
+    //Search through and find groups with flagbit 0.
+    int tempInt;
+    for(int i = 0; i < defaultFlags.Length; i++) {
+        for(int d = 0; d < MAXTYPES; d++) {
+            
+        }
+    }
+    
+    
+    
+    
+    delete defaultFlags;
+    defaultFlags = null;
+}
+
+public void clearOrCreateArrayList(ArrayList &array, int blocksize) {
+    if(array == null) {
+        array = new ArrayList(blocksize);
+    } else {
+        array.Clear();
+    }
+}
+
+public void deleteArrayList(ArrayList &array) {
+    if(array != null) {
+        delete array;
+        array = null;
+    }
 }
