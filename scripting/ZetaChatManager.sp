@@ -118,16 +118,12 @@ public OnReceiveServerGroup(Database db, DBResultSet result, const char[] error,
     Transaction transaction = new Transaction();
     // only if the server doesn't belong to a server group should we try and add the address.
     //Retrieve All configs Prefix, Name, Suffix and Text.
-    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", PREFIX, sqlCopyPasta);
-    transaction.AddQuery(sqlBuffer, PREFIX);
-    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", NAME, sqlCopyPasta);
-    transaction.AddQuery(sqlBuffer, NAME);
-    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", SUFFIX, sqlCopyPasta);
-    transaction.AddQuery(sqlBuffer, SUFFIX);
-    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type='%i' AND gr IN (%s) ORDER BY pr DESC;", TEXT, sqlCopyPasta);
-    transaction.AddQuery(sqlBuffer, TEXT);
+    for(int t = PREFIX; t <= TEXT; t++) {
+        Format(sqlBuffer, sizeof(sqlBuffer), "SELECT * FROM chat_config WHERE type=%i AND gr IN (%s) ORDER BY pr DESC;", t, sqlCopyPasta);
+        transaction.AddQuery(sqlBuffer, t);
+    }
     //Retrieve flags?
-    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT flag, gr FROM chat_flags WHERE gr IN (%s);", sqlCopyPasta);
+    Format(sqlBuffer, sizeof(sqlBuffer), "SELECT flag, gr FROM chat_ident WHERE type=0 AND gr IN (%s);", sqlCopyPasta);
     transaction.AddQuery(sqlBuffer, -1);
     if(!hasServerInDB) {
         Format(sqlBuffer, sizeof(sqlBuffer), "INSERT INTO chat_servers (address, sg, disp) VALUES ('%s', -1, '%s');", serverAddress, serverAddress);
@@ -140,7 +136,6 @@ public void loadConfigTransactionCallback(Database db, any data, int numQueries,
     
     char tempBuffer[68];
     int tempInt;
-    
     
     clearOrCreateArrayList(chatID, 1);
     clearOrCreateArrayList(chatGroup, 1);
@@ -196,7 +191,7 @@ public void loadConfigTransactionCallback(Database db, any data, int numQueries,
                         flagGroup.Push(results[x].FetchInt(1));
                     } else {
                         flagBits.Push(0);
-                        defaultFlags.Push(flagGroup.Push(results[x].FetchInt(1)));
+                        defaultFlags.Push(flagGroup.Push(results[x].FetchInt(1))); //Shouldn't we just push the group striaght to the ArrayList instead of the index of the group arraylist?
                     }
                 }
             }
@@ -216,9 +211,10 @@ public void threadFailure(Database db, any data, int numQueries, const char[] er
 public void findDefaultChat(ArrayList &defaultFlags) {
     //Search through and find groups with flagbit 0.
     int tempInt;
-    for(int i = 0; i < defaultFlags.Length; i++) {
-        for(int d = 0; d < MAXTYPES; d++) {
-            
+    //
+    for(int d = 0; d < MAXTYPES; d++) {
+        for(int i = 0; i < defaultFlags.Length; i++) {
+            //Check to see if the top priority is within the group list.
         }
     }
     
