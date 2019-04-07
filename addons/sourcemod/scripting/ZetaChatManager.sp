@@ -29,6 +29,7 @@ int typeBits[CHAT_MAX] = {
     CHAT_PREFIX,CHAT_NAME,CHAT_SUFFIX,CHAT_TEXT
 };//Prefix, Name, Suffix, Text
 
+bool plHideChat[MAXPLAYERS+1];
 int plChat[MAXPLAYERS+1][CHAT_MAX];
 char plSteamId[MAXPLAYERS+1][32];
 
@@ -59,8 +60,9 @@ ConVar cProfile;
 
 //Cookies!
 Handle hChatSettings[CHAT_MAX];
+Handle hChatHide;
 
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.0.1"
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
     author = "Mitch",
@@ -74,9 +76,11 @@ public void OnPluginStart() {
     AutoExecConfig(true, "ZetaChatManager");
     
     RegConsoleCmd("sm_cc", CommandShowChatMenu, "Shows the chat color menu");
+    RegConsoleCmd("sm_chatcolor", CommandShowChatMenu, "Shows the chat color menu");
     
     //Register Chat Settings clientprefs.
     char tempBuffer[32];
+    hChatHide = RegClientCookie("zeta_hide", "", CookieAccess_Private);
     for(int c = 0; c < CHAT_MAX; c++) {
         Format(tempBuffer, sizeof(tempBuffer), "zeta_%c", typeKeys[c]);
         hChatSettings[c] = RegClientCookie(tempBuffer, "", CookieAccess_Private);
@@ -101,35 +105,19 @@ public void OnClientCookiesCached(int client) {
         GetClientCookie(client, hChatSettings[c], sValue, sizeof(sValue));
         plChat[client][c] = StrEqual(sValue, "") ? defaultChat : LookupChatID(sValue);
     }
+    GetClientCookie(client, hChatHide, sValue, sizeof(sValue));
+    plHideChat[client] = sValue[0] != '\0' && sValue[0] != '0';
 }
 
 public void OnClientPostAdminCheck(int client) {
-    //Create a small timer to check access to certain tags.
-    // Check if current chat config still has access to, if not default.
-    //CreateTimer(0.2, Timer_CheckChat, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
     if(GetClientAuthId(client, AuthId_Steam2, plSteamId[client], sizeof(plSteamId[]))) {
         //Worked i guess.
     }
 }
 
-/*public Action Timer_CheckChat(Handle timer, any data) {
-    int client = GetClientOfUserId(data);
-    if(client <= 0 || client > MaxClients) {
-        return Plugin_Stop;
-    }
-    for(int c = 0; c < CHAT_MAX; c++) {
-        if(plChat[client][c] != defaultChat) {
-            if(!ChatAccess(client, plChat[client][c])) {
-                //User doesn't have any access to this chat config, we'll just set it to default but not save.
-                plChat[client][c] = defaultChat;
-            }
-        }
-    }
-    return Plugin_Stop;
-}*/
-
 //CiderChatProcessor part.
 public void HandlePlayerColors(int author, char[] name, char[] message, bool overrideMessageColor, ArrayList recipients) {
+    bool useDefault = plHideChat[author];
     bool alive = IsPlayerAlive(author);
     int team = GetClientTeam(author);
     if(team < 2) {
@@ -139,6 +127,7 @@ public void HandlePlayerColors(int author, char[] name, char[] message, bool ove
         //Broadcast to every one in game. (Useful for restricted dead talk)
         int flagBits = GetUserFlagBits(author);
         if(flagBits & ADMFLAG_GENERIC || flagBits & ADMFLAG_ROOT) {
+            useDefault = false; //Unhides admin's chat.
             strcopy(message, MAXLENGTH_MESSAGE, message[1]);
             alive = true;
             if(recipients != null) {
@@ -154,7 +143,7 @@ public void HandlePlayerColors(int author, char[] name, char[] message, bool ove
     char chValue[CHAT_MAX][64];
     int tempIndex = defaultChat;
     for(int c = 0; c < CHAT_MAX; c++) {
-        tempIndex = ChatAccess(author, plChat[author][c]) ? plChat[author][c] : defaultChat;
+        tempIndex = !useDefault && ChatAccess(author, plChat[author][c]) ? plChat[author][c] : defaultChat;
         ChatGetColor(c, tempIndex, alive, team, chValue[c], sizeof(chValue[]));
     }
     //ugly.
@@ -222,8 +211,8 @@ public void ShowChatMenu(int client, int type, int page) {
     Menu menu = new Menu(handlerChatMenu);
     char display[64];
     char item[32];
-    int drawStyle = ITEMDRAW_DEFAULT;
     if(type > -1) {
+        int drawStyle = ITEMDRAW_DEFAULT;
         int ciType = -1;
         for(int ci = 0; ci < alLookup.Length; ci++) {
             if(ci != defaultChat) {
@@ -265,8 +254,13 @@ public void ShowChatMenu(int client, int type, int page) {
             } else {
                 Format(display, sizeof(display), "%s", typeDisplay[c]);
             }
+            if(c == CHAT_MAX-1) {
+                Format(display, sizeof(display), "%s\n ", display);
+            }
             menu.AddItem(item, display);
         }
+        Format(display, sizeof(display), "%s Chat Colors", plHideChat[client] ? "Show" : "Hide");
+        menu.AddItem("-1;-2", display);
         menu.Pagination = 0;
         menu.ExitButton = true;
     }
@@ -292,11 +286,23 @@ public int handlerChatMenu(Menu menu, MenuAction action, int client, int param2)
     int type = StringToInt(tempParts[0]);
     int index = StringToInt(tempParts[1]);
     if(type == -1) {
-        ShowChatMenu(client, index, 0);
+        if(index == -2) {
+            plHideChat[client] = !plHideChat[client];
+            SetClientCookie(client, hChatHide, plHideChat[client] ? "1" : "0");
+        }
+        ShowChatMenu(client, index < 0 ? -1 : index, 0);
         return;
     }
     SaveChat(client, type, index); //Updates the plChat and saves the cookie.
-    ShowChatMenu(client, type, 0);
+    //Display in chat their new color.
+    int currTeam = GetClientTeam(client);
+    bool alive = IsPlayerAlive(client);
+    char chValue[CHAT_MAX][64];
+    for(int c = 0; c < CHAT_MAX; c++) {
+        ChatGetColor(c, plChat[client][c], alive, currTeam, chValue[c], sizeof(chValue[]));
+    }
+    PrintToChat(client, "%s%s%N%s\x01: %sTest Text", chValue[PREFIX], chValue[NAME], client, chValue[SUFFIX], chValue[TEXT]);
+    ShowChatMenu(client, type, menu.Selection);
 }
 
 // Some helper functions to get the current part.
