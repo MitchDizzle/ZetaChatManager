@@ -3,6 +3,8 @@
 #include <clientprefs>
 #include <CiderChatProcessor>
 
+#define IN_DEBUG
+
 #define CONFIG_FILE     "configs/zetachatconfig.cfg"
 
 #define PREFIX      0
@@ -62,7 +64,7 @@ ConVar cProfile;
 Handle hChatSettings[CHAT_MAX];
 Handle hChatHide;
 
-#define PLUGIN_VERSION "1.0.1"
+#define PLUGIN_VERSION "1.0.3"
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
     author = "Mitch",
@@ -72,6 +74,7 @@ public Plugin myinfo = {
 };
 
 public void OnPluginStart() {
+    CreateConVar("sm_zeta_version", PLUGIN_VERSION, "Zeta Chat Manager Version", FCVAR_DONTRECORD);
     cProfile = CreateConVar("sm_zeta_profile", "", "Current server profile, for multiple separate with comma");
     AutoExecConfig(true, "ZetaChatManager");
     
@@ -147,7 +150,7 @@ public void HandlePlayerColors(int author, char[] name, char[] message, bool ove
         ChatGetColor(c, tempIndex, alive, team, chValue[c], sizeof(chValue[]));
     }
     //ugly.
-    Format(name, MAXLENGTH_NAME, "%s%s%s%s\x01", chValue[PREFIX], chValue[NAME], name, chValue[SUFFIX]);
+    Format(name, MAXLENGTH_NAME, "%s%s%s%s%c", chValue[PREFIX], chValue[NAME], name, chValue[SUFFIX], '\1');
     if(!overrideMessageColor) {
         Format(message, MAXLENGTH_BUFFER, "%s%s", chValue[TEXT], message);
     }
@@ -436,9 +439,11 @@ public void ParseConfig() {
     kvStoreBuffers();
     
     //Debug only really..
+#if defined IN_DEBUG
     kvChat.Rewind();
     BuildPath(Path_SM, filepath, sizeof(filepath), "configs/zetachatconfig_output.cfg");
     kvChat.ExportToFile(filepath);
+#endif
     
     PrintToServer("Loaded %i chat sections", alLookup.Length);
     //CheckPlayers(); //
@@ -469,8 +474,8 @@ public void kvStoreBuffers() {
         LogError("Could not go the first subkey (kvChat)!");
         return;
     }
-    char keyName[64];
-    char buffer[64];
+    char keyName[128];
+    char buffer[128];
     any lookupData[LK_MAX] = {
         0,  //LK_TYPE
         -1, //LK_KEYID
@@ -519,11 +524,26 @@ public void kvStoreBuffers() {
                     kvChat.GetString(tempKey, buffer, sizeof(buffer), "");
                     if(buffer[0] != '\0') {
                         foundOne = true;
-                        //Restore it with the {07} replaced?
-                        if(ReplaceString(buffer, sizeof(buffer), "{07}", "\x07") > 0 ||
-                           ReplaceString(buffer, sizeof(buffer), "{03}", "\x03") > 0) {
+                        //Convert any unicode replacements {XX}, {01}/{07} etc.
+                        char newBuffer[128];
+                        bool replacedAnything = false;
+                        for(int pos,npos = 0; pos < strlen(buffer); pos++) {
+                            if(buffer[pos] == '\0') {
+                                break;
+                            }
+                            if(buffer[pos] == '{' && buffer[pos+3] == '}') {
+                                //We found a variable, copy it nicely.
+                                //Try to convert to integer then convert the integer to char.
+                                newBuffer[npos++] = (buffer[++pos] - '0') * 10 + (buffer[++pos] - '0');
+                                pos++; //Set the post to the ending bracket.
+                                replacedAnything = true;
+                            } else {
+                                newBuffer[npos++] = buffer[pos];
+                            }
+                        }
+                        if(replacedAnything) {
                             //Replaces the old key with the actual unicode character, 4 characters turned to 1.
-                            kvChat.SetString(tempKey, buffer);
+                            kvChat.SetString(tempKey, newBuffer);
                         }
                         if(isDefault) {
                             //Copy value as default.
