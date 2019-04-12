@@ -1,0 +1,83 @@
+
+Chat Manager
+1. Prefix (Goes to a list of available tags)
+3. Suffix
+4. Name -> (Name Color Chooser)
+4. Text -> (Text Color Chooser)
+
+
+Example Custom Prefix: "{c1}[{c2}Admin{c1}]"
+Example Custom Prefix: "{c1}VIP{c2}."
+
+Name Color Chooser (Team):
+1. Team Red (Terrorist) -> Choose Red Prefix (Status)
+2. Team Blu (Counter-Terrorist)
+3. Spectator
+
+Choose Red Prefix (List):
+1. Admin Tag Red
+1. Admin Tag Orange
+
+
+Database config:
+
+chat_config:
+int  - id
+int  - type - Used to determine what type of value this is.
+int  - gr - group - What config this group is under
+int  - priority
+char - sg
+char - display - the display of this value
+char - t0
+char - t0d
+char - t1
+char - t1d
+char - t2
+char - t2d
+
+chat_groups:
+int  - id -
+int  - priority - 
+char - steamid/flag
+char - gr - group
+char - sg - servergroup - server group this chat group is present on
+
+chat_servergroups: Say you have like 3 idle servers, you can group them together here
+int  - id
+char - display
+
+chat_servers: Add a server if it does not exist in the database. (Auto Config)
+char - uniqueid
+char - Name
+char - ip/port
+char - sgs - servergroup (def: 0)
+
+chat_players:
+int  - id
+char - auth
+char - groups - The groups the player belongs to.
+char - name
+
+chat_flags:
+int  - id
+char - flag
+char - groups
+char - name
+
+chat_config example:
+type: "tag:prefix"
+auth: "b&STEAM_0:0:12345"
+value: "{c1}[{c2}Admin{c1}]"
+display:"Custom Admin Tag 1"
+
+type: "color:prefix,suffix,name"
+auth: "b"
+value:"\x07FFAAAA"
+display:"Off White"
+
+Types:
+1 - Prefix
+2 - Name
+3 - Suffix
+4 - Text
+
