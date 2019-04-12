@@ -71,7 +71,7 @@ ConVar cProfile;
 Handle hChatSettings[CHAT_MAX];
 Handle hChatHide;
 
-#define PLUGIN_VERSION "1.1.2"
+#define PLUGIN_VERSION "1.1.3"
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
     author = "Mitch",
@@ -166,6 +166,9 @@ stock Action HandlePlayerColors(int author, char[] name, char[] message, ArrayLi
         ChatGetColor(c, tempIndex, alive, team, chValue[c], sizeof(chValue[]));
     }
     //ugly.
+    if(chValue[NAME][0] == '\0') {
+        chValue[NAME] = "\x03";
+    }
     Format(name, 256, "%s%s%s%s%c", chValue[PREFIX], chValue[NAME], name, chValue[SUFFIX], '\1');
     Format(message, 512, "%s%s", chValue[TEXT], message);
     return Plugin_Changed;
@@ -557,7 +560,7 @@ public void kvStoreBuffers() {
             bool foundOne = false;
             for(int a = 0; a <= 1; a++) {
                 for(int t = 0; t <= 2; t++) {
-                    Format(tempKey, sizeof(tempKey), "%c%c%c", typeKeys[c], a ? "" : "d", t == 1 ? "2" : t == 2 ? "3" : "");
+                    Format(tempKey, sizeof(tempKey), "%c%c%c", typeKeys[c], a == 1 ? "" : "d", t == 1 ? "2" : t == 2 ? "3" : "");
                     kvChat.GetString(tempKey, buffer, sizeof(buffer), "");
                     if(buffer[0] != '\0') {
                         foundOne = true;
@@ -584,7 +587,7 @@ public void kvStoreBuffers() {
                         }
                         if(isDefault) {
                             //Copy value as default.
-                            strcopy(defaultValues[c][a][t], 32, buffer);
+                            strcopy(defaultValues[c][a][t], 32, newBuffer);
                         }
                     }
                 }
