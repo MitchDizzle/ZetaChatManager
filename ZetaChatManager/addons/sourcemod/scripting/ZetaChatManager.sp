@@ -10,7 +10,7 @@
 #tryinclude <chat-processor>
 #tryinclude <CiderChatProcessor>
 
-#define IN_DEBUG
+//#define IN_DEBUG
 
 #define CONFIG_FILE     "configs/zetachatconfig.cfg"
 
