@@ -2,14 +2,23 @@
 
 An enhanced chat color plugin that allows clients be flexible about their chat's prefix, prefix+color, name color, suffix+color and text color. Requires Cider-Chat-Processor, Chat Processor. (Or god forbid simple-chatprocessor).
 
-### This works well with GroupHandlerAPI, but isn't required.
+### This works well with [GroupAssigner](https://forums.alliedmods.net/showthread.php?p=2646768), but isn't required.
 
 Don't expect this to be easier to setup than custom-chat-colors plugin, this is more advanced for a reason. It allows players to toggle on and off certain aspects of their tags and choose tags that the server operator allows them to have. 
 
-*This currently does not allow players to adjust the colors of their tags but it is planned later.*
+*This currently does not allow players to individually adjust the color aspects of their tags but it is planned later.*
 
 For any issues post in the Alliedmods forum or create GitHub issue marking what's wrong and any information to help solve your issue faster.
 Contributions are welcome via PR, however my code style will not change (4 space indent, brackets on the same line as the condition, and no one line statements).
+
+## Required Plugins
+You must choose what processor plugin you want to have loaded. (I won't be offended if you don't use mine, i'll only be offended if you use choose scp).
+
+* [Mitchell's Cider-Chat-Processor](https://forums.alliedmods.net/showthread.php?p=2646798)
+* [Drixevel's Chat-Processor](https://forums.alliedmods.net/showthread.php?p=2448733)
+* [minimoney1's Simple Chat Processor (Not recommended)](https://forums.alliedmods.net/showthread.php?p=1820365)
+
+**Only one of these are needed, installing multiple will probably do some weird shit.**
 
 # Server config
 
