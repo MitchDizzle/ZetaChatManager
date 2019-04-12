@@ -71,7 +71,7 @@ ConVar cProfile;
 Handle hChatSettings[CHAT_MAX];
 Handle hChatHide;
 
-#define PLUGIN_VERSION "1.1.0"
+#define PLUGIN_VERSION "1.1.2"
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
     author = "Mitch",
@@ -91,6 +91,8 @@ public void OnPluginStart() {
     RegConsoleCmd("sm_adminchat", CommandShowChatMenu, "Shows the chat color menu");
     RegConsoleCmd("sm_tag", CommandShowChatMenu, "Shows the chat color menu");
     RegConsoleCmd("sm_tags", CommandShowChatMenu, "Shows the chat color menu");
+    
+    RegAdminCmd("sm_setchat", CommandSetChat, ADMFLAG_ROOT, "Sets a steamid's chat unique id");
     
     //Register Chat Settings clientprefs.
     char tempBuffer[32];
@@ -259,7 +261,7 @@ public void ShowChatMenu(int client, int type, int page) {
         menu.SetTitle("Chat %s", typeDisplay[type]);
         if(defaultChat != -1) {
             Format(item, sizeof(item), "%i;%i", type, defaultChat);
-            drawStyle = plChat[client][type] == defaultChat ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT;
+            drawStyle = plChat[client][type] == defaultChat || menu.ItemCount == 0 ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT;
             FormatFromChatIndex(defaultChat, display, sizeof(display));
             if(menu.ItemCount > 0) {
                 menu.InsertItem(0, item, display, drawStyle);
@@ -273,7 +275,7 @@ public void ShowChatMenu(int client, int type, int page) {
         menu.SetTitle("Chat Color Settings");
         for(int c = 0; c < CHAT_MAX; c++) {
             Format(item, sizeof(item), "-1;%i", c);
-            if(plChat[client][c] > 0) {
+            if(plChat[client][c] > 0 && ChatAccess(client, plChat[client][c])) {
                 FormatFromChatIndex(plChat[client][c], display, sizeof(display));
                 Format(display, sizeof(display), "%s [%s]", typeDisplay[c], display);
             } else {
@@ -639,6 +641,24 @@ public void kvLoadProfile(KeyValues kv, char[] profile) {
     } while(kv.GotoNextKey());
 }
 
+public Action CommandSetChat(int client, int args) {
+    if(args < 3) {
+        ReplyToCommand(client, "sm_setchat <steamid> <pnst> <chat_id>");
+        return Plugin_Handled;
+    }
+    char authId[64];
+    GetCmdArg(1, authId, sizeof(authId)); //Steamid
+    char strType[64];
+    GetCmdArg(2, strType, sizeof(strType)); //Type
+    char strBuffer[64];
+    GetCmdArg(3, strBuffer, sizeof(strBuffer)); //Type
+    for(int t = 0; t < CHAT_MAX; t++) {
+        if(FindCharInString(strType, typeKeys[t], false) != -1) {
+            SetAuthIdCookie(authId, hChatSettings[t], strBuffer);
+        }
+    }
+    return Plugin_Handled;
+}
 // Native Stuff
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
     CreateNative("Zeta_SetDefault", Native_SetDefault);
@@ -661,13 +681,25 @@ public int Native_SetDefault(Handle plugin, int args) {
         ThrowNativeError(SP_ERROR_NATIVE, "Client %i cookies are not cached yet!", client);
         return false;
     }
+    char chatKey[64];
+    GetNativeString(3, chatKey, sizeof(chatKey));
     int typebits = GetNativeCell(2);
+    if(typebits == -1) {
+        typebits = CHAT_ALL;
+    }
+    return setDefaultChat(client, typebits, chatKey, false);
+}
+
+public bool setDefaultChat(int client, int typebits, char[] chatKey, bool forceSet) {
     if(typebits < 0) {
         return false;
     }
-    char chatKey[64];
-    GetNativeString(3, chatKey, sizeof(chatKey));
+    int chatIndex = LookupChatID(chatKey);
     //PrintToServer("Setting Default of %N to %s", client, chatKey);
+    if(chatIndex != defaultChat) {
+        int chatBits = alLookup.Get(chatIndex, LK_TYPE);
+        typebits &= chatBits; //Make sure we don't override tags that don't actually exist.
+    }
     
     char cookieValue[64];
     //If chatKey is not blank then we check if the client cookie is blank and update it.
@@ -677,10 +709,10 @@ public int Native_SetDefault(Handle plugin, int args) {
         //Get the cookies.
         if(typebits & typeBits[t]) {
             GetClientCookie(client, hChatSettings[t], cookieValue, sizeof(cookieValue));
-            if((chatKey[0] == '\0' && cookieValue[0] != '\0') ||
-               (chatKey[0] != '\0' && cookieValue[0] == '\0')) {
+            if(forceSet || (chatKey[0] == '\0' && cookieValue[0] != '\0') ||
+                           (chatKey[0] != '\0' && cookieValue[0] == '\0')) {
                 SetClientCookie(client, hChatSettings[t], chatKey);
-                plChat[client][t] = LookupChatID(chatKey);
+                plChat[client][t] = chatIndex;
                 setSomething = true;
             }
         }
