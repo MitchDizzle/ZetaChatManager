@@ -14,7 +14,7 @@ Contributions are welcome via PR, however my code style will not change (4 space
 # Server config
 
 ## Profiles
-The config can be the same on multiple server and have different results dependening on what server loads the config. Using profiles to apply more chat sections or override existing ones.
+The config can be the same on multiple server and have different results depending on what server loads the config. Using profiles to apply more chat sections or override existing ones.
 ```
 // Each Profile is separated with commons, ex: sm_zeta_profile "Murder,FF2,Test Server"
 sm_zeta_profile ""
