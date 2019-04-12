@@ -15,6 +15,7 @@
 /**
  * Sets the default chat of the player
  * typeBits is ZETACHAT_* defines above.
+ * Should only be used if the clientprefs are already cached for the player.
  */
 native bool Zeta_SetDefault(int client, int typeBits, char[] chatKey);
 
