@@ -1,7 +1,14 @@
 #pragma semicolon 1
 
 #include <clientprefs>
-#include <CiderChatProcessor>
+
+#undef REQUIRE_PLUGIN
+#tryinclude <scp>
+//Because scp.inc is a bit weird.
+#undef MAXLENGTH_NAME
+#undef MAXLENGTH_MESSAGE
+#tryinclude <chat-processor>
+#tryinclude <CiderChatProcessor>
 
 #define IN_DEBUG
 
@@ -35,11 +42,11 @@ bool plHideChat[MAXPLAYERS+1];
 int plChat[MAXPLAYERS+1][CHAT_MAX];
 char plSteamId[MAXPLAYERS+1][32];
 
-#define LK_TYPE   0
-#define LK_KEYID  1
-#define LK_DISPID 2
-#define LK_OVRDID 3
-#define LK_MAX    4
+#define LK_TYPE   0 // 
+#define LK_KEYID  1 // 
+#define LK_DISPID 2 // 
+#define LK_OVRDID 3 // 
+#define LK_MAX    4 // 
 //Contains:
 //int  type //Stores if the entry has Prefix, Name, Suffix, or Text within the config.
 //int  KeyID
@@ -64,7 +71,7 @@ ConVar cProfile;
 Handle hChatSettings[CHAT_MAX];
 Handle hChatHide;
 
-#define PLUGIN_VERSION "1.0.3"
+#define PLUGIN_VERSION "1.1.0"
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
     author = "Mitch",
@@ -80,6 +87,10 @@ public void OnPluginStart() {
     
     RegConsoleCmd("sm_cc", CommandShowChatMenu, "Shows the chat color menu");
     RegConsoleCmd("sm_chatcolor", CommandShowChatMenu, "Shows the chat color menu");
+    RegConsoleCmd("sm_vipchat", CommandShowChatMenu, "Shows the chat color menu");
+    RegConsoleCmd("sm_adminchat", CommandShowChatMenu, "Shows the chat color menu");
+    RegConsoleCmd("sm_tag", CommandShowChatMenu, "Shows the chat color menu");
+    RegConsoleCmd("sm_tags", CommandShowChatMenu, "Shows the chat color menu");
     
     //Register Chat Settings clientprefs.
     char tempBuffer[32];
@@ -106,7 +117,7 @@ public void OnClientCookiesCached(int client) {
     char sValue[32];
     for(int c = 0; c < CHAT_MAX; c++) {
         GetClientCookie(client, hChatSettings[c], sValue, sizeof(sValue));
-        plChat[client][c] = StrEqual(sValue, "") ? defaultChat : LookupChatID(sValue);
+        plChat[client][c] = LookupChatID(sValue);
     }
     GetClientCookie(client, hChatHide, sValue, sizeof(sValue));
     plHideChat[client] = sValue[0] != '\0' && sValue[0] != '0';
@@ -118,8 +129,11 @@ public void OnClientPostAdminCheck(int client) {
     }
 }
 
-//CiderChatProcessor part.
-public void HandlePlayerColors(int author, char[] name, char[] message, bool overrideMessageColor, ArrayList recipients) {
+//Here we handle the color and formatting for the message and name.
+stock Action HandlePlayerColors(int author, char[] name, char[] message, ArrayList recipients, bool clientIndex = false) {
+    if(author < 0 || author > MaxClients) {
+        return Plugin_Continue;
+    }
     bool useDefault = plHideChat[author];
     bool alive = IsPlayerAlive(author);
     int team = GetClientTeam(author);
@@ -137,7 +151,7 @@ public void HandlePlayerColors(int author, char[] name, char[] message, bool ove
                 recipients.Clear();
                 for(int i = 1; i <= MaxClients; i++) {
                     if(IsClientInGame(i)) {
-                        recipients.Push(GetClientUserId(i));
+                        recipients.Push(clientIndex ? i : GetClientUserId(i));
                     }
                 }
             }
@@ -150,18 +164,24 @@ public void HandlePlayerColors(int author, char[] name, char[] message, bool ove
         ChatGetColor(c, tempIndex, alive, team, chValue[c], sizeof(chValue[]));
     }
     //ugly.
-    Format(name, MAXLENGTH_NAME, "%s%s%s%s%c", chValue[PREFIX], chValue[NAME], name, chValue[SUFFIX], '\1');
-    if(!overrideMessageColor) {
-        Format(message, MAXLENGTH_BUFFER, "%s%s", chValue[TEXT], message);
-    }
+    Format(name, 256, "%s%s%s%s%c", chValue[PREFIX], chValue[NAME], name, chValue[SUFFIX], '\1');
+    Format(message, 512, "%s%s", chValue[TEXT], message);
+    return Plugin_Changed;
 }
 
+//CiderChatProcessor uses this forward.
 public Action CCP_OnChatMessage(int& author, ArrayList recipients, char[] flagstring, char[] name, char[] message) {
-    if(author < 0 || author > MaxClients) {
-        return Plugin_Continue;
-    }
-    HandlePlayerColors(author, name, message, false, recipients);
-    return Plugin_Changed;
+    return HandlePlayerColors(author, name, message, recipients);
+}
+
+//Cross compat? Drixevel's chat-processor uses this forward.
+public Action CP_OnChatMessage(int& author, ArrayList recipients, char[] flagstring, char[] name, char[] message, bool& processcolors, bool& removecolors) {
+    return HandlePlayerColors(author, name, message, recipients);
+}
+
+//Even more cross compatible forward! simple chat processor, which shouldn't be used.
+public Action OnChatMessage(&author, Handle recipients, char[] name, char[] message) {
+    return HandlePlayerColors(author, name, message, view_as<ArrayList>(recipients), true);
 }
 
 public void ChatGetColor(int type, int index, bool alive, int team, char[] buffer, int size) {
@@ -206,7 +226,9 @@ public void ChatGetColor(int type, int index, bool alive, int team, char[] buffe
 }
 //Create menus for the preferences
 public Action CommandShowChatMenu(int client, int args) {
-    if(client) ShowChatMenu(client, -1, 0);
+    if(client) {
+        ShowChatMenu(client, -1, 0);
+    }
     return Plugin_Handled;
 }
 
@@ -258,7 +280,7 @@ public void ShowChatMenu(int client, int type, int page) {
                 Format(display, sizeof(display), "%s", typeDisplay[c]);
             }
             if(c == CHAT_MAX-1) {
-                Format(display, sizeof(display), "%s\n ", display);
+                Format(display, sizeof(display), "%s\n %s", display, plHideChat[client] ? "YOUR TAGS ARE HIDDEN!" : "");
             }
             menu.AddItem(item, display);
         }
@@ -303,6 +325,14 @@ public int handlerChatMenu(Menu menu, MenuAction action, int client, int param2)
     char chValue[CHAT_MAX][64];
     for(int c = 0; c < CHAT_MAX; c++) {
         ChatGetColor(c, plChat[client][c], alive, currTeam, chValue[c], sizeof(chValue[]));
+    }
+    if(chValue[NAME][0] == '\0' || chValue[NAME][0] == '\3') {
+        //Close enough?
+        switch(currTeam) {
+            case 2:  chValue[NAME] = "\x07FF4040";
+            case 3:  chValue[NAME] = "\x0799CCFF";
+            default: chValue[NAME] = "\x07CCCCCC";
+        }
     }
     PrintToChat(client, "%s%s%N%s\x01: %sTest Text", chValue[PREFIX], chValue[NAME], client, chValue[SUFFIX], chValue[TEXT]);
     ShowChatMenu(client, type, menu.Selection);
@@ -354,6 +384,10 @@ public bool ChatAccess(int client, int index) {
 }
 
 public int LookupChatID(char[] key) {
+    if(key[0] == '\0') {
+        //Blank returns default chat index.
+        return defaultChat;
+    }
     int chatId;
     if(!mapKeys.GetValue(key, chatId)) {
         chatId = defaultChat;
@@ -480,7 +514,7 @@ public void kvStoreBuffers() {
         0,  //LK_TYPE
         -1, //LK_KEYID
         -1, //LK_DISPID
-        -1  //LK_OVRDID
+        -1 //LK_OVRDID
     };
     alLookup = new ArrayList(LK_MAX);
     alDisplay = new ArrayList(ByteCountToCells(32));
@@ -496,6 +530,7 @@ public void kvStoreBuffers() {
         kvChat.GetSectionName(keyName, sizeof(keyName));
         isDefault = defaultChat == -1 && StrEqual(keyName, "default", false);
         kvChat.DeleteKey("comment"); //Delete any comments.
+
         //IntToString(count, buffer, sizeof(buffer));
         //kvChat.SetSectionName(""); // Possbily saves memory to make it smaller. (Actually needed for cookies).
         kvChat.GetString("disp", buffer, sizeof(buffer));
@@ -602,4 +637,53 @@ public void kvLoadProfile(KeyValues kv, char[] profile) {
         KvCopySubkeys(kv, kvChat);
         kvChat.GoBack();
     } while(kv.GotoNextKey());
+}
+
+// Native Stuff
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max) {
+    CreateNative("Zeta_SetDefault", Native_SetDefault);
+    //CreateNative("Zeta_FormatForPlayer", Native_FormatForPlayer);
+    RegPluginLibrary("ZetaChatManager");
+    return APLRes_Success;
+}
+
+public int Native_SetDefault(Handle plugin, int args) {
+    int client = GetNativeCell(1);
+    if(client <= 0 || client > MaxClients) {
+        ThrowNativeError(SP_ERROR_NATIVE, "Client index %i is invalid", client);
+        return false;
+    }
+    if(!IsClientConnected(client)) {
+        ThrowNativeError(SP_ERROR_NATIVE, "Client %i is not connected", client);
+        return false;
+    }
+    if(!AreClientCookiesCached(client)) {
+        ThrowNativeError(SP_ERROR_NATIVE, "Client %i cookies are not cached yet!", client);
+        return false;
+    }
+    int typebits = GetNativeCell(2);
+    if(typebits < 0) {
+        return false;
+    }
+    char chatKey[64];
+    GetNativeString(3, chatKey, sizeof(chatKey));
+    //PrintToServer("Setting Default of %N to %s", client, chatKey);
+    
+    char cookieValue[64];
+    //If chatKey is not blank then we check if the client cookie is blank and update it.
+    //If chatKey is blank then we check if the client cookie is not blank and update it.
+    bool setSomething = false;
+    for(int t = 0; t < CHAT_MAX; t++) {
+        //Get the cookies.
+        if(typebits & typeBits[t]) {
+            GetClientCookie(client, hChatSettings[t], cookieValue, sizeof(cookieValue));
+            if((chatKey[0] == '\0' && cookieValue[0] != '\0') ||
+               (chatKey[0] != '\0' && cookieValue[0] == '\0')) {
+                SetClientCookie(client, hChatSettings[t], chatKey);
+                plChat[client][t] = LookupChatID(chatKey);
+                setSomething = true;
+            }
+        }
+    }
+    return setSomething;
 }
