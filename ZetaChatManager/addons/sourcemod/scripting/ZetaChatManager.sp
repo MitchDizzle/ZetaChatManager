@@ -71,7 +71,7 @@ ConVar cProfile;
 Handle hChatSettings[CHAT_MAX];
 Handle hChatHide;
 
-#define PLUGIN_VERSION "1.1.3"
+#define PLUGIN_VERSION "1.1.4"
 public Plugin myinfo = {
     name = "Zeta Chat Manager",
     author = "Mitch",
@@ -170,7 +170,8 @@ stock Action HandlePlayerColors(int author, char[] name, char[] message, ArrayLi
         chValue[NAME] = "\x03";
     }
     Format(name, 256, "%s%s%s%s%c", chValue[PREFIX], chValue[NAME], name, chValue[SUFFIX], '\1');
-    Format(message, 512, "%s%s", chValue[TEXT], message);
+    Format(message, 254, "%s%s", chValue[TEXT], message);
+    Format(message, 255, "%s%c", message, '\1');
     return Plugin_Changed;
 }
 
@@ -364,7 +365,7 @@ public bool ChatAccess(int client, int index) {
     if(cmdIndex == -1) {
         return true;
     }
-    char overrideBuffer[32];
+    char overrideBuffer[1024];
     alOverride.GetString(cmdIndex, overrideBuffer, sizeof(overrideBuffer));
     if(overrideBuffer[0] == '@') {
         //There's no fast way to determine if a client has a group.
@@ -383,7 +384,7 @@ public bool ChatAccess(int client, int index) {
     } else if(overrideBuffer[0] == 'S' &&
               overrideBuffer[4] == 'M' &&
               overrideBuffer[5] == '_' && IsClientAuthorized(client)) { //Probably 'STEAM_'.
-        return StrEqual(overrideBuffer, plSteamId[client], false);
+        return StrContains(overrideBuffer, plSteamId[client], false) != -1;
     }
     return CheckCommandAccess(client, overrideBuffer, ADMFLAG_ROOT, false);
 }
@@ -514,7 +515,7 @@ public void kvStoreBuffers() {
         return;
     }
     char keyName[128];
-    char buffer[128];
+    char buffer[1024];
     any lookupData[LK_MAX] = {
         0,  //LK_TYPE
         -1, //LK_KEYID
@@ -523,7 +524,7 @@ public void kvStoreBuffers() {
     };
     alLookup = new ArrayList(LK_MAX);
     alDisplay = new ArrayList(ByteCountToCells(32));
-    alOverride = new ArrayList(ByteCountToCells(32));
+    alOverride = new ArrayList(ByteCountToCells(1024));
     mapKeys = new StringMap();
     
     StringMap tmpDisplayMap = new StringMap();
@@ -560,7 +561,7 @@ public void kvStoreBuffers() {
             bool foundOne = false;
             for(int a = 0; a <= 1; a++) {
                 for(int t = 0; t <= 2; t++) {
-                    Format(tempKey, sizeof(tempKey), "%c%c%c", typeKeys[c], a == 1 ? "" : "d", t == 1 ? "2" : t == 2 ? "3" : "");
+                    Format(tempKey, sizeof(tempKey), "%s%s%s", typeKeys[c], a == 1 ? "" : "d", t == 1 ? "2" : t == 2 ? "3" : "");
                     kvChat.GetString(tempKey, buffer, sizeof(buffer), "");
                     if(buffer[0] != '\0') {
                         foundOne = true;
